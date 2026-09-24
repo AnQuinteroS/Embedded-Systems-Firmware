@@ -9,13 +9,38 @@
 
 constexpr uint8_t SENSOR_I2C_ADDRESS = 0x76;
 constexpr uint8_t TEMP_REGISTER_MSB = 0xFA;
+constexpr uint8_t CALIB_REGISTER_START = 0x88;  // dig_T1..dig_T3 (0x88 to 0x8D)
+constexpr uint8_t CTRL_MEAS_REGISTER = 0xF4;
+constexpr uint8_t CTRL_MEAS_NORMAL_MODE = 0x27; // osrs_t x1, osrs_p x1, normal mode
 
-// BMP280 requires reading factory calibration registers (0x88 to 0x8D) for accurate data.
-// In a production environment, these must be read via I2C during setup().
-// These are placeholder values representing typical factory calibration coefficients.
-uint16_t dig_T1 = 27504; 
-int16_t dig_T2 = 26435;
-int16_t dig_T3 = -1000;
+// Factory calibration coefficients. Each sensor has its own values, stored in
+// registers 0x88 to 0x8D (little-endian). They are read from the chip in setup().
+uint16_t dig_T1 = 0;
+int16_t dig_T2 = 0;
+int16_t dig_T3 = 0;
+
+// Reads the three temperature calibration words from the sensor.
+bool read_calibration() {
+    Wire.beginTransmission(SENSOR_I2C_ADDRESS);
+    Wire.write(CALIB_REGISTER_START);
+    if (Wire.endTransmission() != 0) return false;
+
+    Wire.requestFrom((uint8_t)SENSOR_I2C_ADDRESS, (uint8_t)6);
+    if (Wire.available() != 6) return false;
+
+    // Separate read calls guarantee the LSB is read before the MSB
+    uint8_t t1_lsb = Wire.read();
+    uint8_t t1_msb = Wire.read();
+    uint8_t t2_lsb = Wire.read();
+    uint8_t t2_msb = Wire.read();
+    uint8_t t3_lsb = Wire.read();
+    uint8_t t3_msb = Wire.read();
+
+    dig_T1 = (uint16_t)((t1_msb << 8) | t1_lsb);
+    dig_T2 = (int16_t)((t2_msb << 8) | t2_lsb);
+    dig_T3 = (int16_t)((t3_msb << 8) | t3_lsb);
+    return true;
+}
 
 void setup() {
     Serial.begin(115200);
@@ -28,6 +53,19 @@ void setup() {
         while (true); 
     }
     Serial.println("Sensor successfully detected.");
+
+    if (!read_calibration()) {
+        Serial.println("CRITICAL ERROR: Could not read calibration data.");
+        while (true);
+    }
+
+    // The BMP280 starts in sleep mode: wake it up so it measures continuously.
+    // Without this, the data registers keep their reset value (0x80000).
+    Wire.beginTransmission(SENSOR_I2C_ADDRESS);
+    Wire.write(CTRL_MEAS_REGISTER);
+    Wire.write(CTRL_MEAS_NORMAL_MODE);
+    Wire.endTransmission();
+    delay(100); // Wait for the first conversion
 }
 
 // Standard Bosch BMP280 compensation formula to convert 20-bit raw data to Celsius

@@ -6,8 +6,8 @@ This project implements a firmware module for the **ESP32** microcontroller to i
 Unlike high-level libraries that hide the complexity of data acquisition, this implementation focuses on manual register addressing and raw data processing, demonstrating a deep understanding of how software interacts with hardware.
 
 ## Key Engineering Concepts
-* **Bitwise Operations:** The script reads data in 8-bit chunks (MSB and LSB) and utilizes bitwise shifting (`<<`) and the OR operator (`|`) to reconstruct 16-bit integers.
-* **Communication Protocol:** Implements the I2C master-slave architecture, handling bus initialization (`Wire.begin()`) and error checking for device presence.
+* **Bitwise Operations:** The script reads data in 8-bit chunks (MSB and LSB) and utilizes bitwise shifting (`<<`) and the OR operator (`|`) to reconstruct the 20-bit raw temperature value.
+* **Communication Protocol:** Implements the I2C master-slave architecture, handling bus initialization (`Wire.begin()`), error checking for device presence, reading the factory calibration registers, and switching the sensor from sleep to normal mode.
 * **Efficiency:** Uses `constexpr` for memory-safe constant definition, avoiding the overhead of `#define` and ensuring type safety at compile-time.
 
 ## How to Test
