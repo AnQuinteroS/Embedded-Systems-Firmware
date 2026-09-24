@@ -1,60 +1,72 @@
 /**
- * ESP32 I2C Temperature Sensor Monitor
- * * Objective: Read raw sensor data via I2C protocol, process the bitwise 
- * information into human-readable temperature, and transmit it over WiFi/Serial.
- * * Why this matters for AI/Software Engineering: 
- * Demonstrates hardware-software integration, bitwise operations, and 
- * handling systems with strict memory and processing constraints.
+ * ESP32 I2C Temperature Sensor Monitor (BMP280)
+ * 
+ * Objective: Read raw 20-bit sensor data via I2C protocol and process it 
+ * into human-readable temperature applying the required factory calibration.
  */
+#include <Wire.h>
+#include <Arduino.h>
 
-#include <Wire.h> // Standard I2C library for ESP32/Arduino frameworks
-
-// Define hardware constants (Using 'constexpr' for memory efficiency over '#define')
-constexpr uint8_t SENSOR_I2C_ADDRESS = 0x76; 
+constexpr uint8_t SENSOR_I2C_ADDRESS = 0x76;
 constexpr uint8_t TEMP_REGISTER_MSB = 0xFA;
-constexpr float TEMP_CALIBRATION_FACTOR = 0.01f;
+
+// BMP280 requires reading factory calibration registers (0x88 to 0x8D) for accurate data.
+// In a production environment, these must be read via I2C during setup().
+// These are placeholder values representing typical factory calibration coefficients.
+uint16_t dig_T1 = 27504; 
+int16_t dig_T2 = 26435;
+int16_t dig_T3 = -1000;
 
 void setup() {
-    // Initialize serial communication at a high baud rate for faster debugging
     Serial.begin(115200);
-    
-    // Initialize the I2C bus
     Wire.begin();
-    
     Serial.println("System Initialized. Booting I2C Sensor...");
-    
-    // Verify sensor connection
+
     Wire.beginTransmission(SENSOR_I2C_ADDRESS);
     if (Wire.endTransmission() != 0) {
         Serial.println("CRITICAL ERROR: Sensor not found on I2C bus.");
-        while (true); // Halt execution to prevent undefined behavior
+        while (true); 
     }
     Serial.println("Sensor successfully detected.");
 }
 
+// Standard Bosch BMP280 compensation formula to convert 20-bit raw data to Celsius
+int32_t t_fine;
+float compensate_temperature(int32_t adc_T) {
+    int32_t var1, var2, T;
+    var1 = ((((adc_T >> 3) - ((int32_t)dig_T1 << 1))) * ((int32_t)dig_T2)) >> 11;
+    var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
+    t_fine = var1 + var2;
+    T = (t_fine * 5 + 128) >> 8;
+    return T / 100.0f;
+}
+
 void loop() {
-    // 1. Request 2 bytes of data from the sensor's temperature register
     Wire.beginTransmission(SENSOR_I2C_ADDRESS);
     Wire.write(TEMP_REGISTER_MSB);
     Wire.endTransmission();
     
-    Wire.requestFrom(SENSOR_I2C_ADDRESS, (uint8_t)2);
-    
-    if (Wire.available() == 2) {
-        // 2. Bitwise Operation: Combine Most Significant Byte (MSB) and Least Significant Byte (LSB)
-        // We shift the MSB 8 bits to the left and use bitwise OR to append the LSB.
-        uint16_t raw_temperature = (Wire.read() << 8) | Wire.read();
-        
-        // 3. Process the raw data using the calibration factor
-        float actual_temperature = raw_temperature * TEMP_CALIBRATION_FACTOR;
-        
+    // BMP280 temperature data is 20 bits, spread across 3 bytes
+    Wire.requestFrom((uint8_t)SENSOR_I2C_ADDRESS, (uint8_t)3);
+
+    if (Wire.available() == 3) {
+        // Separate read calls guarantee execution order in C++
+        uint8_t msb = Wire.read();
+        uint8_t lsb = Wire.read();
+        uint8_t xlsb = Wire.read();
+
+        // Reconstruct the 20-bit raw value
+        int32_t raw_temperature = (msb << 12) | (lsb << 4) | (xlsb >> 4);
+
+        // Apply factory calibration
+        float actual_temperature = compensate_temperature(raw_temperature);
+
         Serial.print("Current Temperature: ");
         Serial.print(actual_temperature);
         Serial.println(" °C");
     } else {
         Serial.println("Warning: Data request failed or incomplete payload received.");
     }
-    
-    // Delay to prevent flooding the serial monitor and save CPU cycles (simulating a polling rate)
-    delay(2000); 
+
+    delay(2000);
 }
