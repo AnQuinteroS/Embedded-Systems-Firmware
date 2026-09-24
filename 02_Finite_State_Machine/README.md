@@ -22,3 +22,4 @@ This is a header-only/single-file C++ simulation. It can be compiled with any st
 ```bash
 g++ vending_machine_fsm.cpp -o fsm_sim
 ./fsm_sim
+```
